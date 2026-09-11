@@ -1,0 +1,4 @@
+ST,GS,+  12.34 kg
+ST,GS,+  12.35 kg
+ST,GS,+  12.33 kg
+ST,GS,+  12.36 kg

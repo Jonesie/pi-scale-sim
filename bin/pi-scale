@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Start/stop/check the scale simulator running on the Pi, from the desktop.
+set -euo pipefail
+
+HOST="pi-scale"
+REMOTE_SCRIPT="~/scale_sim.py"
+REMOTE_DATA="${SCALE_DATA:-~/dummy_readings.txt}"
+PORT="${SCALE_PORT:-5000}"
+INTERVAL="${SCALE_INTERVAL:-1.0}"
+# Bracket-escape one char so pkill's own invocation string doesn't self-match.
+PKILL_PATTERN="sc[a]le_sim.py"
+
+usage() {
+    echo "Usage: pi-scale {start|stop|restart|status|log}"
+    exit 1
+}
+
+case "${1:-}" in
+    start)
+        ssh "$HOST" "pkill -f '$PKILL_PATTERN' 2>/dev/null; nohup python3 $REMOTE_SCRIPT --file $REMOTE_DATA --port $PORT --interval $INTERVAL </dev/null >~/scale_sim.log 2>&1 &"
+        sleep 1
+        ssh "$HOST" "ss -ltn | grep -q ':$PORT ' && echo 'started, listening on port $PORT' || echo 'FAILED to start — check ~/scale_sim.log on the pi'"
+        ;;
+    stop)
+        ssh "$HOST" "pkill -f '$PKILL_PATTERN' 2>/dev/null && echo stopped || echo 'was not running'"
+        ;;
+    restart)
+        "$0" stop
+        "$0" start
+        ;;
+    status)
+        ssh "$HOST" "ss -ltn | grep -q ':$PORT ' && echo running || echo stopped"
+        ;;
+    log)
+        ssh "$HOST" "tail -n 30 ~/scale_sim.log"
+        ;;
+    *)
+        usage
+        ;;
+esac
