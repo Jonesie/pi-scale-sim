@@ -27,9 +27,11 @@ cable required.
 ## Repo layout
 
 - `scale_sim.py` — the TCP server script that runs **on the Pi**.
-- `bin/pi-scale` — control script that runs **on the desktop**, drives the
-  Pi-side script over SSH (start/stop/status/restart/log). Symlinked into
-  `~/bin/pi-scale` so it's on `PATH`.
+- `bin/pi-scale` — control script that runs **on the desktop**. Drives the
+  Pi-side script over SSH (`start`/`stop`/`status`/`restart`/`log`), manages
+  the local socat bridge (`bridge-start`/`bridge-stop`/`bridge-status`), and
+  live-tails the data (`view`). Symlinked into `~/bin/pi-scale` so it's on
+  `PATH`.
 - `data/dummy_readings.txt` — sample/test data (fake scale readings) used
   for verifying the pipeline end-to-end.
 
@@ -64,26 +66,80 @@ scp mydata.txt pi-scale:~/mydata.txt
 SCALE_DATA=~/mydata.txt pi-scale start
 ```
 
-### Start/stop the desktop-side virtual serial port
+### Desktop-side virtual serial port (the socat bridge)
 
-Not yet wrapped in a script — currently started manually:
-
-```bash
-socat -d -d pty,raw,echo=0,link=$HOME/dev/ttyScale tcp:192.168.51.14:5000 &
-```
-
-Find and kill it with:
+Also managed by `pi-scale`:
 
 ```bash
-pkill -f 'socat.*ttyScale'
+pi-scale bridge-start    # start the socat bridge -> ~/dev/ttyScale
+pi-scale bridge-stop
+pi-scale bridge-status
 ```
 
-Once running, any app can read `~/dev/ttyScale` like a normal serial device,
-e.g.:
+The bridge process is fully detached (via `setsid`) so it keeps running
+independently of whatever shell or script started it.
+
+### View the live serial data
 
 ```bash
-cat ~/dev/ttyScale
+pi-scale view
 ```
+
+Starts the bridge if it isn't already running, then prints each incoming
+reading with a timestamp:
+
+```
+10:43:11  ST,GS,+  12.34 kg
+10:43:12  ST,GS,+  12.35 kg
+```
+
+`Ctrl-C` stops viewing but leaves the bridge running for other consumers.
+You can also read `~/dev/ttyScale` directly with any tool that treats it as
+a serial device, e.g. `cat ~/dev/ttyScale` or a Python `pyserial` script.
+
+## Serial settings
+
+`~/dev/ttyScale` is a **pty** (pseudo-terminal), not real UART hardware. That
+matters for two reasons:
+
+- socat can still *set* the standard termios line settings on it (baud, data
+  bits, parity, stop bits) — an app that calls `tcgetattr()`/`stty` on the
+  device will see the values below, and some apps refuse to open a serial
+  port unless it reports settings they expect.
+- But a pty doesn't actually enforce timing electrically the way a real UART
+  does. Nothing here will throttle bytes to genuinely take "1/9600th of a
+  second per bit" — the effective pacing of the data is controlled entirely
+  by `scale_sim.py --interval` on the Pi (how often a line is sent), not by
+  the baud rate.
+
+| Setting     | Default | Env var           | Values          |
+|-------------|---------|--------------------|-----------------|
+| Baud rate   | 9600    | `SCALE_BAUD`       | any integer, e.g. `1200`, `9600`, `19200`, `115200` |
+| Data bits   | 8       | `SCALE_DATABITS`   | `5`, `6`, `7`, `8` |
+| Parity      | none    | `SCALE_PARITY`     | `none`, `even`, `odd` |
+| Stop bits   | 1       | `SCALE_STOPBITS`   | `1`, `2` |
+
+9600 8N1 is the default because it's the most common setting for RS232
+scale/indicator protocols, but override any of these when starting the
+bridge:
+
+```bash
+SCALE_BAUD=19200 SCALE_PARITY=even SCALE_STOPBITS=2 pi-scale bridge-start
+```
+
+Restart the bridge (`pi-scale bridge-stop && pi-scale bridge-start`) for a
+settings change to take effect — they're applied at bridge start, not live.
+
+Verify what's currently applied with:
+
+```bash
+stty -F ~/dev/ttyScale -a
+```
+
+To change the **data rate** (readings per second) rather than the serial
+line's advertised baud rate, use `SCALE_INTERVAL` on the Pi-side `start`
+command instead — see [Control the simulator from the
+desktop](#control-the-simulator-from-the-desktop) above.
 
 ## Data file format
 

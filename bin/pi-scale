@@ -3,21 +3,47 @@
 set -euo pipefail
 
 HOST="pi-scale"
+HOST_IP="192.168.51.14"
 REMOTE_SCRIPT="~/scale_sim.py"
 REMOTE_DATA="${SCALE_DATA:-~/dummy_readings.txt}"
 PORT="${SCALE_PORT:-5000}"
 INTERVAL="${SCALE_INTERVAL:-1.0}"
-# Bracket-escape one char so pkill's own invocation string doesn't self-match.
+TTY_LINK="${SCALE_TTY:-$HOME/dev/ttyScale}"
+# Serial line settings applied to the virtual pty's termios (see README "Serial
+# settings" section for what these mean and why they mostly don't matter here).
+BAUD="${SCALE_BAUD:-9600}"
+DATABITS="${SCALE_DATABITS:-8}"       # 5|6|7|8
+PARITY="${SCALE_PARITY:-none}"        # none|even|odd
+STOPBITS="${SCALE_STOPBITS:-1}"       # 1|2
+# Bracket-escape one char so pkill/pgrep's own invocation string doesn't self-match.
 PKILL_PATTERN="sc[a]le_sim.py"
+BRIDGE_PATTERN="soc[a]t.*ttyScale"
+
+case "$PARITY" in
+    none) PARITY_OPTS="parenb=0" ;;
+    even) PARITY_OPTS="parenb=1,parodd=0" ;;
+    odd)  PARITY_OPTS="parenb=1,parodd=1" ;;
+    *) echo "SCALE_PARITY must be none|even|odd" >&2; exit 1 ;;
+esac
+case "$STOPBITS" in
+    1) STOPBIT_OPTS="cstopb=0" ;;
+    2) STOPBIT_OPTS="cstopb=1" ;;
+    *) echo "SCALE_STOPBITS must be 1|2" >&2; exit 1 ;;
+esac
+PTY_TERMIOS="b${BAUD},cs${DATABITS},${PARITY_OPTS},${STOPBIT_OPTS}"
 
 usage() {
-    echo "Usage: pi-scale {start|stop|restart|status|log}"
+    echo "Usage: pi-scale {start|stop|restart|status|log|bridge-start|bridge-stop|bridge-status|view}"
     exit 1
 }
 
 case "${1:-}" in
     start)
-        ssh "$HOST" "pkill -f '$PKILL_PATTERN' 2>/dev/null; nohup python3 $REMOTE_SCRIPT --file $REMOTE_DATA --port $PORT --interval $INTERVAL </dev/null >~/scale_sim.log 2>&1 &"
+        # Separate ssh calls: if combined into one command line, that line's own
+        # argv contains "scale_sim.py" (from the nohup part below) which the pkill
+        # call would then match and kill itself with.
+        ssh "$HOST" "pkill -f '$PKILL_PATTERN' 2>/dev/null" || true
+        ssh "$HOST" "nohup python3 $REMOTE_SCRIPT --file $REMOTE_DATA --port $PORT --interval $INTERVAL </dev/null >~/scale_sim.log 2>&1 &"
         sleep 1
         ssh "$HOST" "ss -ltn | grep -q ':$PORT ' && echo 'started, listening on port $PORT' || echo 'FAILED to start — check ~/scale_sim.log on the pi'"
         ;;
@@ -33,6 +59,39 @@ case "${1:-}" in
         ;;
     log)
         ssh "$HOST" "tail -n 30 ~/scale_sim.log"
+        ;;
+    bridge-start)
+        if pgrep -f "$BRIDGE_PATTERN" >/dev/null; then
+            echo "bridge already running -> $TTY_LINK"
+        else
+            mkdir -p "$(dirname "$TTY_LINK")"
+            # setsid puts socat in its own session/process group so it survives
+            # Ctrl-C or `timeout` killing this script's foreground process group
+            # (plain `disown` only removes it from bash's job table, not the group).
+            setsid socat -d -d "pty,raw,echo=0,link=$TTY_LINK,$PTY_TERMIOS" "tcp:$HOST_IP:$PORT" </dev/null >/tmp/pi-scale-bridge.log 2>&1 &
+            disown
+            sleep 1
+            if pgrep -f "$BRIDGE_PATTERN" >/dev/null; then
+                echo "bridge started -> $TTY_LINK"
+            else
+                echo "FAILED to start bridge — check /tmp/pi-scale-bridge.log"
+                exit 1
+            fi
+        fi
+        ;;
+    bridge-stop)
+        pkill -f "$BRIDGE_PATTERN" 2>/dev/null && echo "bridge stopped" || echo "bridge was not running"
+        ;;
+    bridge-status)
+        pgrep -f "$BRIDGE_PATTERN" >/dev/null && echo "running -> $TTY_LINK" || echo "stopped"
+        ;;
+    view)
+        "$0" bridge-start
+        echo "Viewing $TTY_LINK — Ctrl-C to stop (bridge keeps running)"
+        while IFS= read -r line; do
+            line="${line%$'\r'}"
+            printf '%s  %s\n' "$(date +%H:%M:%S)" "$line"
+        done < "$TTY_LINK"
         ;;
     *)
         usage
