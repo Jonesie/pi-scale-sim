@@ -1,5 +1,13 @@
 # pi-scale-sim
 
+> **Platform note:** the desktop side (`bin/pi-scale`, the socat bridge) is
+> only tested on **Linux**. It likely works on **macOS** with little or no
+> change (`socat` and pty semantics are the same BSD-derived model), but
+> hasn't been verified there. It will **not** work as-is on **Windows** —
+> there's no `/dev/pts` pty and no `socat` — you'd need a different bridge
+> (e.g. `com0com` for a virtual COM port, or run this under WSL2). The Pi
+> side (`scale_sim.py`) is plain Python/TCP and is unaffected by any of this.
+
 Simulates an electronic scale's serial output using a Raspberry Pi, streamed
 to a virtual serial port on a desktop over the network — no physical serial
 cable required.
