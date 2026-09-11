@@ -33,11 +33,50 @@ esac
 PTY_TERMIOS="b${BAUD},cs${DATABITS},${PARITY_OPTS},${STOPBIT_OPTS}"
 
 usage() {
-    echo "Usage: pi-scale {start|stop|restart|status|log|bridge-start|bridge-stop|bridge-status|view}"
-    exit 1
+    cat <<EOF
+Usage: pi-scale <command>
+
+Controls the scale simulator running on the Pi ($HOST / $HOST_IP) and the
+socat bridge that exposes it as a virtual serial device on this desktop.
+
+Pi-side simulator (over SSH):
+  start          Start streaming \$SCALE_DATA on the Pi (kills any existing
+                 instance first). Reports whether it came up listening.
+  stop           Stop the simulator on the Pi.
+  restart        stop, then start.
+  status         Check whether the Pi is listening on \$SCALE_PORT.
+  log            Tail the last 30 lines of the Pi-side log (~/scale_sim.log).
+
+Desktop-side virtual serial port:
+  bridge-start   Start the socat bridge (Pi TCP stream -> \$SCALE_TTY pty).
+                 No-op if already running. Applies the serial line settings
+                 below to the pty.
+  bridge-stop    Stop the bridge.
+  bridge-status  Check whether the bridge is running.
+  view           bridge-start, then live-print each incoming reading with a
+                 timestamp. Ctrl-C stops viewing; the bridge keeps running.
+
+Environment variables (all optional, shown with current effective value):
+  SCALE_DATA       readings file path on the Pi      [$REMOTE_DATA]
+  SCALE_PORT       TCP port the Pi listens on         [$PORT]
+  SCALE_INTERVAL   seconds between readings           [$INTERVAL]
+  SCALE_TTY        local pty symlink path             [$TTY_LINK]
+  SCALE_BAUD       reported baud rate (see README)    [$BAUD]
+  SCALE_DATABITS   5|6|7|8                            [$DATABITS]
+  SCALE_PARITY     none|even|odd                      [$PARITY]
+  SCALE_STOPBITS   1|2                                [$STOPBITS]
+
+Examples:
+  SCALE_DATA=~/mydata.txt SCALE_INTERVAL=0.5 pi-scale start
+  SCALE_BAUD=19200 SCALE_PARITY=even pi-scale bridge-start
+EOF
 }
 
 case "${1:-}" in
+    -h|--help|help)
+        usage
+        exit 0
+        ;;
     start)
         # Separate ssh calls: if combined into one command line, that line's own
         # argv contains "scale_sim.py" (from the nohup part below) which the pkill
@@ -94,6 +133,7 @@ case "${1:-}" in
         done < "$TTY_LINK"
         ;;
     *)
-        usage
+        usage >&2
+        exit 1
         ;;
 esac
