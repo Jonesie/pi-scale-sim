@@ -28,8 +28,19 @@ cable required.
 
 ## Hardware / network setup
 
-- Raspberry Pi: `pitoy` at `192.168.51.14`, SSH alias `pi-scale` (see
-  `~/.ssh/config`), login user `pi`, key `~/.ssh/id_ed25519_piscale`.
+- Set up an SSH alias named `pi-scale` in your `~/.ssh/config` pointing at
+  your own Pi's address, e.g.:
+
+  ```
+  Host pi-scale
+      Hostname 192.168.1.42   # replace with your Pi's actual IP/hostname
+      User pi
+      IdentityFile ~/.ssh/id_ed25519_piscale
+  ```
+
+  `bin/pi-scale` resolves the Pi's address from this entry at runtime (via
+  `ssh -G pi-scale`) rather than having any IP hardcoded, so it works
+  regardless of your network.
 - No physical serial cable is used — this is a pure network bridge.
 
 ## Repo layout

@@ -3,7 +3,13 @@
 set -euo pipefail
 
 HOST="pi-scale"
-HOST_IP="192.168.51.14"
+# Resolved from your own ~/.ssh/config entry for $HOST — see README setup —
+# rather than hardcoded, since every Pi's address is different.
+HOST_IP="$(ssh -G "$HOST" 2>/dev/null | awk '$1=="hostname"{print $2}')"
+if [ -z "$HOST_IP" ]; then
+    echo "Could not resolve a hostname for SSH host '$HOST' — check ~/.ssh/config" >&2
+    exit 1
+fi
 REMOTE_SCRIPT="~/scale_sim.py"
 REMOTE_DATA="${SCALE_DATA:-~/dummy_readings.txt}"
 PORT="${SCALE_PORT:-5000}"
