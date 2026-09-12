@@ -1,5 +1,7 @@
 # pi-scale-sim
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > **Platform note:** the desktop side (`bin/pi-scale`, the socat bridge) is
 > only tested on **Linux**. It likely works on **macOS** with little or no
 > change (`socat` and pty semantics are the same BSD-derived model), but
@@ -171,3 +173,15 @@ ST,GS,+  12.35 kg
 
 Line ending sent over the wire defaults to CRLF (`\r\n`), configurable via
 `scale_sim.py --line-ending`.
+
+## License
+
+[MIT](LICENSE)
+
+---
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/jonesie">
+    <img src="assets/bmc-button.png" alt="Buy Me A Coffee" height="41">
+  </a>
+</p>
